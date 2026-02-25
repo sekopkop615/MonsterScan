@@ -178,3 +178,63 @@ contract MonsterScan is ReentrancyGuard, Pausable {
     function getScanIdsPaginated(uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        uint256 total = _scanIds.length;        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new bytes32[](n);
         for (uint256 i = 0; i < n; i++) out[i] = _scanIds[offset + i];    }
     function getScansBatch(bytes32[] calldata scanIds)        external        view        returns (            address[] memory targets,            uint8[] memory riskTiers,            bytes32[] memory flagsHashes,            address[] memory reporters,            uint256[] memory atBlocks,            bool[] memory exists        )    {        uint256 n = scanIds.length;        if (n > MSC_VIEW_BATCH) n = MSC_VIEW_BATCH;        targets = new address[](n);
+        riskTiers = new uint8[](n);
+        flagsHashes = new bytes32[](n);
+        reporters = new address[](n);
+        atBlocks = new uint256[](n);
+        exists = new bool[](n);
+        for (uint256 i = 0; i < n; i++) {            targets[i] = _scanTarget[scanIds[i]];            riskTiers[i] = _scanRiskTier[scanIds[i]];            flagsHashes[i] = _scanFlagsHash[scanIds[i]];            reporters[i] = _scanReporter[scanIds[i]];            atBlocks[i] = _scanBlock[scanIds[i]];            exists[i] = _scanExists[scanIds[i]];        }    }
+    function exceedsThreshold(bytes32 scanId, uint8 riskTier) external view returns (bool) {        if (!_scanExists[scanId]) return false;        uint256 thresh = _riskThreshold[riskTier];        return uint256(_scanRiskTier[scanId]) >= thresh;    }
+    function addressStatus(address target) external view returns (bool whitelisted, bool blacklisted, uint256 scanCount_) {        return (_whitelist[target], _blacklist[target], _targetScanCount[target]);
+    }
+    function whitelistLength() external view returns (uint256) { return _whitelistArr.length; }
+    function blacklistLength() external view returns (uint256) { return _blacklistArr.length; }
+    function getWhitelistAt(uint256 index) external view returns (address) { return _whitelistArr[index]; }
+    function getBlacklistAt(uint256 index) external view returns (address) { return _blacklistArr[index]; }
+    function getScanCategory(bytes32 scanId) external view returns (uint256) { return _scanCategory[scanId]; }
+    function getCategoryName(uint256 categoryId) external view returns (bytes32) { return _categoryName[categoryId]; }
+    function getCategoryScanCount(uint256 categoryId) external view returns (uint256) { return _categoryScanCount[categoryId]; }
+    function getCategoryScanAt(uint256 categoryId, uint256 index) external view returns (bytes32) { return _categoryScanIds[categoryId][index]; }
+    function deployBlockNumber() external view returns (uint256) { return deployBlock; }
+    function getKeeper() external view returns (address) { return scannerKeeper; }
+    function getVault() external view returns (address) { return reportVault; }
+    function getTargetScansPaginated(address target, uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        uint256 total = _targetScanCount[target];        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _targetScanIds[target][offset + i];    }
+    function isHighRisk(bytes32 scanId) external view returns (bool) {        if (!_scanExists[scanId]) return false;        uint256 thresh = _riskThreshold[8];        return thresh > 0 && uint256(_scanRiskTier[scanId]) >= thresh;    }
+    function getGlobalStats() external view returns (uint256 totalScans, uint256 totalTokens, uint256 totalReporters, uint256 whitelistLen, uint256 blacklistLen, uint256 vaultBal) {        return (_scanIds.length, tokenCount, reporterCount, _whitelistArr.length, _blacklistArr.length, _vaultBalance);
+    }
+    function hasAnyFlag(address target) external view returns (bool) {        return _whitelist[target] || _blacklist[target];    }
+    function tokenScanIdsLength() external view returns (uint256) { return _tokenScanIds.length; }
+    function getTokenScanIdAt(uint256 index) external view returns (bytes32) { return _tokenScanIds[index]; }
+    function getScanSummary(bytes32 scanId) external view returns (address target, uint8 riskTier, bool exists, uint256 atBlock) {        return (_scanTarget[scanId], _scanRiskTier[scanId], _scanExists[scanId], _scanBlock[scanId]);
+    }
+    function getMaxRiskTier() external pure returns (uint256) { return MSC_MAX_RISK_TIER; }
+    function getMaxScans() external pure returns (uint256) { return MSC_MAX_SCANS; }
+    function getBatchLimit() external pure returns (uint256) { return MSC_BATCH_LIMIT; }
+    function getViewBatch() external pure returns (uint256) { return MSC_VIEW_BATCH; }
+    function getScanDomain() external pure returns (bytes32) { return MSC_SCAN_DOMAIN; }
+    function getReporterRole() external pure returns (bytes32) { return MSC_REPORTER_ROLE; }
+    function getTokenNamespace() external pure returns (bytes32) { return MSC_TOKEN_NAMESPACE; }
+    function getMaxCategories() external pure returns (uint256) { return MSC_MAX_CATEGORIES; }
+    function isLive() external view returns (bool) { return !paused(); }
+    function getScanIdsRange(uint256 fromIdx, uint256 toIdx) external view returns (bytes32[] memory) {        uint256 total = _scanIds.length;        if (fromIdx >= total) return new bytes32[](0);
+        if (toIdx > total) toIdx = total;        if (fromIdx >= toIdx) return new bytes32[](0);
+        uint256 n = toIdx - fromIdx;        if (n > MSC_VIEW_BATCH) n = MSC_VIEW_BATCH;        bytes32[] memory out = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _scanIds[fromIdx + i];        return out;    }
+    function getWhitelistPaginated(uint256 offset, uint256 limit) external view returns (address[] memory out) {        uint256 total = _whitelistArr.length;        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new address[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _whitelistArr[offset + i];    }
+    function getBlacklistPaginated(uint256 offset, uint256 limit) external view returns (address[] memory out) {        uint256 total = _blacklistArr.length;        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new address[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _blacklistArr[offset + i];    }
+    function getTokenScanIdsPaginated(uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        uint256 total = _tokenScanIds.length;        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _tokenScanIds[offset + i];    }
+    function allScanIds() external view returns (bytes32[] memory) { return _scanIds; }
+    function allTokenScanIds() external view returns (bytes32[] memory) { return _tokenScanIds; }
+    function getScansByReporter(address reporter, uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        uint256 total = _scanIds.length;        uint256 count = 0;        for (uint256 i = 0; i < total; i++) {            if (_scanReporter[_scanIds[i]] == reporter) count++;        }        if (offset >= count) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > count) end = count;        uint256 n = end - offset;        out = new bytes32[](n);
+        uint256 written = 0;        uint256 outIdx = 0;        for (uint256 i = 0; i < total && outIdx < n; i++) {            if (_scanReporter[_scanIds[i]] == reporter) {                if (written >= offset) {                    out[outIdx] = _scanIds[i];                    outIdx++;                }                written++;            }        }    }
+    function getRiskTierCounts() external view returns (uint256[] memory counts) {        counts = new uint256[](MSC_MAX_RISK_TIER + 1);
+        for (uint256 i = 0; i < _scanIds.length; i++) {            uint8 t = _scanRiskTier[_scanIds[i]];            if (t <= MSC_MAX_RISK_TIER) counts[t]++;        }    }
+    function getScanIdsByRiskTier(uint8 riskTier, uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        if (riskTier > MSC_MAX_RISK_TIER) return out;        uint256 total = _scanIds.length;        uint256 count = 0;        for (uint256 i = 0; i < total; i++) {            if (_scanRiskTier[_scanIds[i]] == riskTier) count++;        }        if (offset >= count) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > count) end = count;        uint256 n = end - offset;        out = new bytes32[](n);
+        uint256 written = 0;        uint256 outIdx = 0;        for (uint256 i = 0; i < total && outIdx < n; i++) {            if (_scanRiskTier[_scanIds[i]] == riskTier) {                if (written >= offset) {                    out[outIdx] = _scanIds[i];                    outIdx++;                }                written++;            }        }    }
+    function totalScansForTarget(address target) external view returns (uint256) { return _targetScanCount[target]; }
+    function scanReporter(bytes32 scanId) external view returns (address) { return _scanReporter[scanId]; }
+    function scanFlags(bytes32 scanId) external view returns (bytes32) { return _scanFlagsHash[scanId]; }
