@@ -298,3 +298,63 @@ contract MonsterScan is ReentrancyGuard, Pausable {
     function blacklistAddressAt(uint256 index) external view returns (address) { return _blacklistArr[index]; }
     function tokenScanIdAt(uint256 index) external view returns (bytes32) { return _tokenScanIds[index]; }
     function tokenAtTokenScanId(bytes32 tokenScanId) external view returns (address) { return _tokenAddress[tokenScanId]; }
+    function riskThresholdForTier(uint8 tier) external view returns (uint256) { return _riskThreshold[tier]; }
+    function isPaused() external view returns (bool) { return paused(); }
+    function keeperAddress() external view returns (address) { return scannerKeeper; }
+    function vaultAddress() external view returns (address) { return reportVault; }
+    function deployBlockNum() external view returns (uint256) { return deployBlock; }
+    function scanListLength() external view returns (uint256) { return _scanIds.length; }
+    function tokenListLength() external view returns (uint256) { return _tokenScanIds.length; }
+    function whitelistSize() external view returns (uint256) { return _whitelistArr.length; }
+    function blacklistSize() external view returns (uint256) { return _blacklistArr.length; }
+    function fetchScanTarget(bytes32 scanId) external view returns (address) { return _scanTarget[scanId]; }
+    function fetchScanRisk(bytes32 scanId) external view returns (uint8) { return _scanRiskTier[scanId]; }
+    function fetchScanReporter(bytes32 scanId) external view returns (address) { return _scanReporter[scanId]; }
+    function fetchScanAtBlock(bytes32 scanId) external view returns (uint256) { return _scanBlock[scanId]; }
+    function fetchScanFlags(bytes32 scanId) external view returns (bytes32) { return _scanFlagsHash[scanId]; }
+    function fetchScanExists(bytes32 scanId) external view returns (bool) { return _scanExists[scanId]; }
+    function fetchTargetScanCount(address target) external view returns (uint256) { return _targetScanCount[target]; }
+    function fetchTargetScanId(address target, uint256 index) external view returns (bytes32) { return _targetScanIds[target][index]; }
+    function fetchTokenAddress(bytes32 tokenScanId) external view returns (address) { return _tokenAddress[tokenScanId]; }
+    function fetchTokenRegistered(bytes32 tokenScanId) external view returns (bool) { return _tokenRegistered[tokenScanId]; }
+    function fetchCategoryName(uint256 categoryId) external view returns (bytes32) { return _categoryName[categoryId]; }
+    function fetchCategoryScanCount(uint256 categoryId) external view returns (uint256) { return _categoryScanCount[categoryId]; }
+    function fetchCategoryScanId(uint256 categoryId, uint256 index) external view returns (bytes32) { return _categoryScanIds[categoryId][index]; }
+    function fetchScanCategory(bytes32 scanId) external view returns (uint256) { return _scanCategory[scanId]; }
+    function fetchVaultBalance() external view returns (uint256) { return _vaultBalance; }
+    function fetchReporterStatus(address addr) external view returns (bool) { return _reporter[addr]; }
+    function fetchWhitelistStatus(address target) external view returns (bool) { return _whitelist[target]; }
+    function fetchBlacklistStatus(address target) external view returns (bool) { return _blacklist[target]; }
+    function fetchThreshold(uint8 tier) external view returns (uint256) { return _riskThreshold[tier]; }}library MonsterScanLib {    function riskLabel(uint8 tier) internal pure returns (bytes32) {        if (tier == 0) return keccak256("LOW");
+        if (tier <= 3) return keccak256("MEDIUM");
+        if (tier <= 6) return keccak256("HIGH");
+        return keccak256("CRITICAL");
+    }
+    function clampTier(uint8 tier, uint8 maxTier) internal pure returns (uint8) {        return tier > maxTier ? maxTier : tier;    }
+    function tierFromLabel(bytes32 label) internal pure returns (uint8) {        if (label == keccak256("LOW")) return 0;        if (label == keccak256("MEDIUM")) return 2;        if (label == keccak256("HIGH")) return 5;        if (label == keccak256("CRITICAL")) return 9;        return 0;    }
+    function isHighTier(uint8 tier, uint8 threshold) internal pure returns (bool) {        return tier >= threshold;    }
+    function minTier(uint8 a, uint8 b) internal pure returns (uint8) {        return a < b ? a : b;    }
+    function maxTier(uint8 a, uint8 b) internal pure returns (uint8) {        return a > b ? a : b;    }}library MonsterScanMath {    function safeAdd(uint256 a, uint256 b) internal pure returns (uint256 c) {        c = a + b;        require(c >= a, "overflow");
+    }
+    function safeSub(uint256 a, uint256 b) internal pure returns (uint256 c) {        require(b <= a, "underflow");
+        c = a - b;    }}interface IMonsterScan {    function scannerKeeper() external view returns (address);
+    function reportVault() external view returns (address);
+    function scanExists(bytes32 scanId) external view returns (bool);
+    function getScan(bytes32 scanId) external view returns (address target, uint8 riskTier, bytes32 flagsHash, address reporter, uint256 atBlock, bool exists);
+    function isWhitelisted(address target) external view returns (bool);
+    function isBlacklisted(address target) external view returns (bool);
+    function scanIdsLength() external view returns (uint256);
+    function getScanIdAt(uint256 index) external view returns (bytes32);
+    function submitScan(bytes32 scanId, address target, uint8 riskTier, bytes32 flagsHash) external;}contract MonsterScanQueries {    struct ScanSummaryView {        bytes32 scanId;        address target;        uint8 riskTier;        uint256 atBlock;        bool exists;    }
+    function queryScansSlice(IMonsterScan scan, uint256 offset, uint256 limit) external view returns (ScanSummaryView[] memory out) {        uint256 total = scan.scanIdsLength();
+        if (offset >= total) return out;        if (limit > 64) limit = 64;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new ScanSummaryView[](n);
+        for (uint256 i = 0; i < n; i++) {            bytes32 sid = scan.getScanIdAt(offset + i);
+            (address target, uint8 riskTier, , , uint256 atBlock, bool exists) = scan.getScan(sid);
+            out[i] = ScanSummaryView({ scanId: sid, target: target, riskTier: riskTier, atBlock: atBlock, exists: exists });
+        }    }
+    function isTargetSafe(IMonsterScan scan, address target) external view returns (bool) {        return scan.isWhitelisted(target) && !scan.isBlacklisted(target);
+    }
+    function isTargetFlagged(IMonsterScan scan, address target) external view returns (bool) {        return scan.isBlacklisted(target);
+    }
+    function batchIsWhitelisted(IMonsterScan scan, address[] calldata targets) external view returns (bool[] memory out) {        uint256 n = targets.length;        out = new bool[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = scan.isWhitelisted(targets[i]);
