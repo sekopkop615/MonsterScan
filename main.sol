@@ -58,3 +58,63 @@ contract MonsterScan is ReentrancyGuard, Pausable {
     // IMMUTABLES
     // -------------------------------------------------------------------------    address public immutable scannerKeeper;    address public immutable reportVault;    uint256 public immutable deployBlock;    // -------------------------------------------------------------------------
     // STATE
+    // -------------------------------------------------------------------------    mapping(bytes32 => bool) private _scanExists;    mapping(bytes32 => address) private _scanTarget;    mapping(bytes32 => uint8) private _scanRiskTier;    mapping(bytes32 => bytes32) private _scanFlagsHash;    mapping(bytes32 => address) private _scanReporter;    mapping(bytes32 => uint256) private _scanBlock;    bytes32[] private _scanIds;    uint256 public scanCount;    mapping(address => bytes32[]) private _targetScanIds;    mapping(address => uint256) private _targetScanCount;    mapping(address => bool) private _whitelist;    mapping(address => bool) private _blacklist;    address[] private _whitelistArr;    address[] private _blacklistArr;    mapping(address => bool) private _reporter;    uint256 public reporterCount;    mapping(uint8 => uint256) private _riskThreshold;    mapping(bytes32 => bool) private _tokenRegistered;    mapping(bytes32 => address) private _tokenAddress;    bytes32[] private _tokenScanIds;    uint256 public tokenCount;    uint256 private _vaultBalance;    uint256 public categoryCount;    mapping(uint256 => bytes32) private _categoryName;    mapping(bytes32 => uint256) private _scanCategory;    mapping(uint256 => bytes32[]) private _categoryScanIds;    mapping(uint256 => uint256) private _categoryScanCount;    // -------------------------------------------------------------------------
+    // CONSTRUCTOR
+    // -------------------------------------------------------------------------    constructor() {        scannerKeeper = msg.sender;        reportVault = address(0x9D1e4F7a2C8b0E5d3A6f9c1B4e7D2a0F8C5b3E6);
+        deployBlock = block.number;        _riskThreshold[1] = 100;        _riskThreshold[2] = 200;        _riskThreshold[3] = 500;        _riskThreshold[5] = 1000;        _riskThreshold[8] = 2000;    }    modifier whenNotPaused() {        if (paused()) revert MSC_Paused();
+        _;    }    modifier onlyKeeper() {        if (msg.sender != scannerKeeper) revert MSC_NotKeeper();
+        _;    }    modifier onlyReporter() {        if (!_reporter[msg.sender]) revert MSC_NotReporter();
+        _;    }
+    // -------------------------------------------------------------------------
+    // REGISTRATION & SCANNING
+    // -------------------------------------------------------------------------
+    /// @param nameHash keccak256 of category name    /// @return categoryId index of the new category (0-based)    function registerCategory(bytes32 nameHash) external whenNotPaused onlyKeeper returns (uint256 categoryId) {        if (categoryCount >= MSC_MAX_CATEGORIES) revert MSC_CategoryLimitReached();
+        categoryId = categoryCount;        _categoryName[categoryId] = nameHash;        categoryCount++;
+    }
+    /// @param tokenScanId unique id for the token (e.g. keccak256(symbol))    /// @param token contract address of the token    /// @param symbolHash keccak256 of symbol string    function registerToken(bytes32 tokenScanId, address token, bytes32 symbolHash) external whenNotPaused onlyKeeper {        if (token == address(0)) revert MSC_ZeroToken();
+        if (tokenScanId == bytes32(0)) revert MSC_ZeroScanId();
+        if (symbolHash == bytes32(0)) revert MSC_ZeroSymbolHash();
+        if (_tokenRegistered[tokenScanId]) revert MSC_ScanAlreadyExists();
+        if (tokenCount >= MSC_MAX_SCANS) revert MSC_MaxScansReached();
+        _tokenRegistered[tokenScanId] = true;        _tokenAddress[tokenScanId] = token;        _tokenScanIds.push(tokenScanId);
+        tokenCount++;        emit TokenRegistered(tokenScanId, token, symbolHash, block.number);
+    }
+    /// @param scanId unique scan identifier    /// @param target address that was scanned    /// @param riskTier 0-10 risk level    /// @param flagsHash hash of flag bits or metadata    function submitScan(bytes32 scanId, address target, uint8 riskTier, bytes32 flagsHash) external whenNotPaused onlyReporter nonReentrant {        _submitScanOne(scanId, target, riskTier, flagsHash, type(uint256).max);
+    }
+    function submitScanWithCategory(bytes32 scanId, address target, uint8 riskTier, bytes32 flagsHash, uint256 categoryId) external whenNotPaused onlyReporter nonReentrant {        if (categoryId >= categoryCount) revert MSC_InvalidCategory();
+        _submitScanOne(scanId, target, riskTier, flagsHash, categoryId);
+    }
+    function _submitScanOne(bytes32 scanId, address target, uint8 riskTier, bytes32 flagsHash, uint256 categoryId) internal {        if (scanId == bytes32(0)) revert MSC_ZeroScanId();
+        if (target == address(0)) revert MSC_ZeroAddress();
+        if (riskTier > MSC_MAX_RISK_TIER) revert MSC_InvalidRiskTier();
+        if (_scanExists[scanId]) revert MSC_ScanAlreadyExists();
+        if (scanCount >= MSC_MAX_SCANS) revert MSC_MaxScansReached();
+        _scanExists[scanId] = true;        _scanTarget[scanId] = target;        _scanRiskTier[scanId] = riskTier;        _scanFlagsHash[scanId] = flagsHash;        _scanReporter[scanId] = msg.sender;        _scanBlock[scanId] = block.number;        _scanIds.push(scanId);
+        if (categoryId != type(uint256).max) {            _scanCategory[scanId] = categoryId;            _categoryScanIds[categoryId].push(scanId);
+            _categoryScanCount[categoryId]++;        }        if (_targetScanIds[target].length == 0) {            _targetScanIds[target].push(scanId);
+            _targetScanCount[target] = 1;        } else {            _targetScanIds[target].push(scanId);
+            _targetScanCount[target]++;        }        scanCount++;        emit AddressScanned(scanId, target, riskTier, block.number);
+        emit ScanResultSubmitted(scanId, msg.sender, riskTier, flagsHash, block.number);
+    }
+    function submitScanBatch(bytes32[] calldata scanIds, address[] calldata targets, uint8[] calldata riskTiers, bytes32[] calldata flagsHashes)        external        whenNotPaused        onlyReporter        nonReentrant    {        if (scanIds.length != targets.length || scanIds.length != riskTiers.length || scanIds.length != flagsHashes.length) revert MSC_ArrayLengthMismatch();
+        if (scanIds.length > MSC_BATCH_LIMIT) revert MSC_BatchTooLarge();
+        if (scanCount + scanIds.length > MSC_MAX_SCANS) revert MSC_MaxScansReached();
+        for (uint256 i = 0; i < scanIds.length; i++) {            bytes32 sid = scanIds[i];            address target = targets[i];            uint8 rt = riskTiers[i];            if (sid == bytes32(0) || target == address(0)) continue;            if (_scanExists[sid] || rt > MSC_MAX_RISK_TIER) continue;            _scanExists[sid] = true;            _scanTarget[sid] = target;            _scanRiskTier[sid] = rt;            _scanFlagsHash[sid] = flagsHashes[i];            _scanReporter[sid] = msg.sender;            _scanBlock[sid] = block.number;            _scanIds.push(sid);
+            _targetScanIds[target].push(sid);
+            _targetScanCount[target]++;            scanCount++;            emit ScanResultSubmitted(sid, msg.sender, rt, flagsHashes[i], block.number);
+        }        emit BatchScansSubmitted(scanIds.length, msg.sender, block.number);
+    }
+    function addToWhitelistBatch(address[] calldata targets) external whenNotPaused onlyKeeper {        if (targets.length > MSC_BATCH_LIMIT) revert MSC_BatchTooLarge();
+        for (uint256 i = 0; i < targets.length; i++) {            address t = targets[i];            if (t == address(0)) continue;            if (!_whitelist[t]) {                _whitelist[t] = true;                _whitelistArr.push(t);
+                emit WhitelistAdded(t, msg.sender, block.number);
+            }        }    }
+    function addToBlacklistBatch(address[] calldata targets) external whenNotPaused onlyKeeper {        if (targets.length > MSC_BATCH_LIMIT) revert MSC_BatchTooLarge();
+        for (uint256 i = 0; i < targets.length; i++) {            address t = targets[i];            if (t == address(0)) continue;            if (!_blacklist[t]) {                _blacklist[t] = true;                _blacklistArr.push(t);
+                emit BlacklistAdded(t, msg.sender, block.number);
+            }        }    }
+    function addToWhitelist(address target) external whenNotPaused onlyKeeper {        if (target == address(0)) revert MSC_ZeroAddress();
+        if (_whitelist[target]) revert MSC_AlreadyWhitelisted();
+        _whitelist[target] = true;        _whitelistArr.push(target);
+        emit WhitelistAdded(target, msg.sender, block.number);
+    }
+    function removeFromWhitelist(address target) external onlyKeeper {        if (!_whitelist[target]) revert MSC_NotWhitelisted();
