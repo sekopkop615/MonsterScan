@@ -118,3 +118,63 @@ contract MonsterScan is ReentrancyGuard, Pausable {
         emit WhitelistAdded(target, msg.sender, block.number);
     }
     function removeFromWhitelist(address target) external onlyKeeper {        if (!_whitelist[target]) revert MSC_NotWhitelisted();
+        _whitelist[target] = false;        emit WhitelistRemoved(target, msg.sender, block.number);
+    }
+    function addToBlacklist(address target) external whenNotPaused onlyKeeper {        if (target == address(0)) revert MSC_ZeroAddress();
+        if (_blacklist[target]) revert MSC_AlreadyBlacklisted();
+        _blacklist[target] = true;        _blacklistArr.push(target);
+        emit BlacklistAdded(target, msg.sender, block.number);
+    }
+    function removeFromBlacklist(address target) external onlyKeeper {        if (!_blacklist[target]) revert MSC_NotBlacklisted();
+        _blacklist[target] = false;        emit BlacklistRemoved(target, msg.sender, block.number);
+    }
+    function setRiskThreshold(uint8 riskTier, uint256 value) external onlyKeeper {        if (riskTier > MSC_MAX_RISK_TIER) revert MSC_InvalidRiskTier();
+        uint256 prev = _riskThreshold[riskTier];        _riskThreshold[riskTier] = value;        emit ThresholdUpdated(riskTier, prev, value, block.number);
+    }
+    function registerReporter(address reporter) external onlyKeeper {        if (reporter == address(0)) revert MSC_ZeroAddress();
+        if (_reporter[reporter]) revert MSC_ReporterAlreadyRegistered();
+        _reporter[reporter] = true;        reporterCount++;        emit ReporterRegistered(reporter, block.number);
+    }
+    function revokeReporter(address reporter) external onlyKeeper {        if (!_reporter[reporter]) revert MSC_ReporterNotRegistered();
+        _reporter[reporter] = false;        reporterCount--;        emit ReporterRevoked(reporter, block.number);
+    }
+    function pause() external onlyKeeper {        _pause();
+        emit ScannerPaused(msg.sender, block.number);
+    }
+    function unpause() external onlyKeeper {        _unpause();
+        emit ScannerUnpaused(msg.sender, block.number);
+    }
+    function withdrawVault() external nonReentrant {        if (msg.sender != reportVault) revert MSC_NotVault();
+        uint256 amt = _vaultBalance;        if (amt == 0) revert MSC_WithdrawZero();
+        _vaultBalance = 0;        (bool ok,) = reportVault.call{value: amt}("");
+        if (!ok) revert MSC_TransferFailed();
+        emit VaultWithdrawn(reportVault, amt, block.number);
+    }    receive() external payable {        _vaultBalance += msg.value;        emit FeeCollected(msg.sender, msg.value, block.number);
+    }
+    // -------------------------------------------------------------------------
+    // VIEWS
+    // -------------------------------------------------------------------------    function getScan(bytes32 scanId)        external        view        returns (address target, uint8 riskTier, bytes32 flagsHash, address reporter, uint256 atBlock, bool exists)    {        return (            _scanTarget[scanId],            _scanRiskTier[scanId],            _scanFlagsHash[scanId],            _scanReporter[scanId],            _scanBlock[scanId],            _scanExists[scanId]        );
+    }
+    function getScanTarget(bytes32 scanId) external view returns (address) { return _scanTarget[scanId]; }
+    function getScanRiskTier(bytes32 scanId) external view returns (uint8) { return _scanRiskTier[scanId]; }
+    function getScanFlagsHash(bytes32 scanId) external view returns (bytes32) { return _scanFlagsHash[scanId]; }
+    function getScanReporter(bytes32 scanId) external view returns (address) { return _scanReporter[scanId]; }
+    function getScanBlock(bytes32 scanId) external view returns (uint256) { return _scanBlock[scanId]; }
+    function scanExists(bytes32 scanId) external view returns (bool) { return _scanExists[scanId]; }
+    function targetScanCount(address target) external view returns (uint256) { return _targetScanCount[target]; }
+    function getTargetScanAt(address target, uint256 index) external view returns (bytes32) { return _targetScanIds[target][index]; }
+    function isWhitelisted(address target) external view returns (bool) { return _whitelist[target]; }
+    function isBlacklisted(address target) external view returns (bool) { return _blacklist[target]; }
+    function isReporter(address addr) external view returns (bool) { return _reporter[addr]; }
+    function getRiskThreshold(uint8 riskTier) external view returns (uint256) { return _riskThreshold[riskTier]; }
+    function vaultBalance() external view returns (uint256) { return _vaultBalance; }
+    function scanIdsLength() external view returns (uint256) { return _scanIds.length; }
+    function getScanIdAt(uint256 index) external view returns (bytes32) { return _scanIds[index]; }
+    function getTokenAt(uint256 index) external view returns (bytes32 tokenScanId, address token) {        if (index >= _tokenScanIds.length) return (bytes32(0), address(0));
+        bytes32 tid = _tokenScanIds[index];        return (tid, _tokenAddress[tid]);
+    }
+    function tokenRegistered(bytes32 tokenScanId) external view returns (bool) { return _tokenRegistered[tokenScanId]; }
+    function getTokenAddress(bytes32 tokenScanId) external view returns (address) { return _tokenAddress[tokenScanId]; }
+    function getScanIdsPaginated(uint256 offset, uint256 limit) external view returns (bytes32[] memory out) {        uint256 total = _scanIds.length;        if (offset >= total) return out;        if (limit > MSC_VIEW_BATCH) limit = MSC_VIEW_BATCH;        uint256 end = offset + limit;        if (end > total) end = total;        uint256 n = end - offset;        out = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = _scanIds[offset + i];    }
+    function getScansBatch(bytes32[] calldata scanIds)        external        view        returns (            address[] memory targets,            uint8[] memory riskTiers,            bytes32[] memory flagsHashes,            address[] memory reporters,            uint256[] memory atBlocks,            bool[] memory exists        )    {        uint256 n = scanIds.length;        if (n > MSC_VIEW_BATCH) n = MSC_VIEW_BATCH;        targets = new address[](n);
