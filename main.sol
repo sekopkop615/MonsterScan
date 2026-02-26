@@ -478,3 +478,63 @@ contract MonsterScan is ReentrancyGuard, Pausable {
 // Line 1224
 // Line 1225
 // Line 1226
+// Line 1227
+// Line 1228
+// Line 1229// Line 1230
+// Line 1231
+// Line 1232
+// Line 1233
+// Line 1234
+// Line 1235
+// Line 1236
+// Line 1237
+// Line 1238
+// Line 1239// Line 1240
+// Line 1241
+// Line 1242
+// Line 1243
+// Line 1244
+// Line 1245
+// Line 1246
+// Line 1247
+// Line 1248
+// Line 1249
+// Line 1250
+// Line 1251
+// Line 1252
+// Line 1253
+// Line 1254
+// Line 1255
+// Line 1256
+// Line 1257
+// Line 1258
+// MScan ref 1
+// MScan ref 2
+// MScan ref 3
+// MScan ref 4
+// MScan ref 5
+// MScan ref 6
+// MScan ref 7
+// MScan ref 8
+// MScan ref 9
+// MScan ref 10
+// MScan ref 11
+// MScan ref 12
+// MScan ref 13
+// MScan ref 14
+// MScan ref 15
+// MScan ref 16
+// MScan ref 17
+// MScan ref 18
+// MScan ref 19
+// MScan ref 20
+// MScan ref 21
+// MScan ref 22
+// MScan ref 23
+// MScan ref 24
+// MScan ref 25
+// MScan ref 26
+// MScan ref 27
+// MScan ref 28
+// MScan ref 29
+// MScan ref 30
